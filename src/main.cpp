@@ -7,8 +7,10 @@
 #include <vector>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
+#include "Car.h"
 #include "json.hpp"
 #include "spline.h"
+#include "Lane.h"
 
 using namespace std;
 
@@ -164,6 +166,44 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 }
 
+/**
+ * Gets the best possible lane to move to or stay in based on cost functions
+ * defined in Lane class
+ *
+ * @param current_lane current lane of the ego car
+ * @param lanes all lanes with sensor data of cars in them
+ * @param ego_car ego car
+ * @return lane number of the best lane to move to
+ */
+int getBestPossibleLane(int current_lane, Lane lanes[], Car ego_car)
+{
+  vector<int> possible_lanes;
+  double cost = 99999999;
+  int best_lane = current_lane;
+  switch (current_lane)
+  {
+    case 0:
+      possible_lanes = {0, 1};
+      break;
+    case 1:
+      possible_lanes = {0, 1, 2};
+      break;
+    default:
+      possible_lanes = {1, 2};
+  }
+
+  for (int i = 0; i < possible_lanes.size(); ++i) {
+    // Get the cost to stay in or move to a new lane
+    double current_cost = lanes[possible_lanes[i]].laneMoveCost(ego_car);
+    if (cost > current_cost)
+    {
+      cost = current_cost;
+      best_lane = possible_lanes[i];
+    }
+  }
+  return best_lane;
+}
+
 int main() {
   uWS::Hub h;
 
@@ -206,7 +246,10 @@ int main() {
 
   double ref_vel = 0.0; // mph
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane,&ref_vel](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  Car ego_car = Car(0, 0, ref_vel, lane);
+  Lane lanes[3] = { Lane(0), Lane(1), Lane(2) };
+
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane,&ref_vel,&ego_car,&lanes](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -253,29 +296,51 @@ int main() {
 
           bool too_close = false;
 
+          // Update the variables for the ego car
+          ego_car.update(car_s, car_d, car_s, lane);
+
+          // Clear lanes before evaluating for next iteration
+          for (int i = 0; i < 3; ++i) {
+            lanes[i].clearLane();
+          }
+
+          double accel_val = 0.224;
+          double decel_val = 0.224;
+
           for (int i = 0; i < sensor_fusion.size(); ++i) {
             float d = sensor_fusion[i][6];
+            double vx = sensor_fusion[i][3];
+            double vy = sensor_fusion[i][4];
+            double check_speed = sqrt(vx * vx + vy * vy);
+            double check_car_s = sensor_fusion[i][5];
+            check_car_s += ((double) prev_size * 0.02 * check_speed);
+
             if (d < (2 + 4 * lane + 2) && d > (2 + 4 * lane - 2)) {
               // Car in lane
-              double vx = sensor_fusion[i][3];
-              double vy = sensor_fusion[i][4];
-              double check_speed = sqrt(vx * vx + vy * vy);
-              double check_car_s = sensor_fusion[i][5];
-
-              check_car_s += ((double) prev_size * 0.02 * check_speed);
               if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
                 too_close = true;
-                if (lane > 0) {
-                  lane = 0;
+                if ((check_car_s - car_s) < 15) {
+                  decel_val *= 1.2;
                 }
               }
             }
+
+            // Add the check_car to the corresponding lane
+            int check_car_lane = int(floor(d / 4));
+            if (check_car_lane >= 0 && check_car_lane <= 2) {
+              lanes[check_car_lane].addCar(Car(check_car_s, d, check_speed, check_car_lane));
+            }
           }
 
-          if(too_close) {
-            ref_vel -= 0.224;
+          if (too_close) {
+            ref_vel -= decel_val;
+            ref_vel = (ref_vel > 0 ? ref_vel : 0.1);
+            // Prevent another lane change if one is in progress
+            if (car_d < (2 + 4 * lane + 2) && car_d > (2 + 4 * lane - 2)) {
+              lane = getBestPossibleLane(lane, lanes, ego_car);
+            }
           } else if (ref_vel < 49.5) {
-            ref_vel += 0.224;
+            ref_vel += accel_val;
           }
 
 
