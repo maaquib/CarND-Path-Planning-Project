@@ -1,6 +1,60 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
-   
+
+[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
+
+## Rubric points
+
+### Compilation
+- [x] The code compiles correctly.
+
+### Valid Trajectories
+- [x] The car is able to drive at least 4.32 miles without incident: *Car was able to complete 10 runs of > 4.32 miles without incident*
+- [x] The car drives according to the speed limit: *Max speed set to 49.5*
+- [x] Max Acceleration and Jerk are not Exceeded
+- [x] Car does not have collisions
+- [x] The car stays in its lane, except for the time between changing lanes: *Doesn't spend more than a 3 second outside lane*
+- [x] The car is able to change lanes: *Changes lane safely*
+
+## Reflection
+The code from the project Q & A is used as a starting point. Additional cost functions were added to decide best possible trajectories. While an FSM is not explicitly implemented, the car has stages which closely mirror FSMs defined in the lecture videos include keeping lane, signaling lane switch, and switching lanes.
+Additional `Lane` and `Car` classes have been defined to make the model code more structured.
+3 Lanes are initialized at the start to keep track of cars moving in them.
+```cpp
+Lane lanes[3] = { Lane(0), Lane(1), Lane(2) };
+```
+
+Data from the sensor for other cars on the road are used to create instances of `Car` class and are added to their corresponding lanes.
+```cpp
+lanes[check_car_lane].addCar(Car(check_car_s, d, check_speed, check_car_lane));
+```
+
+This makes it easier later to evaluate each `Lane` for lane switch separately. Additional function `getBestPossibleLane` does the work of defining possible lanes for switching and calls the cost functions defined in the `Lane` class to obtain the cost of staying in or switching lane. The lane with the least cost is returned to switch or stay in.
+```cpp
+int getBestPossibleLane(int current_lane, Lane lanes[], Car ego_car);
+```
+
+The `Lane` class defines 2 cost functions to decide the trajectory
+##### Distance based cost
+```cpp
+double distanceCost(Car ego_car);
+```
+This function makes sure that their is sufficient distance ahead and behind to perform a lane change. If it is less than the `SAFE_LANE_CHANGE_DIST`, a max value (`MAX_COST`) is returned which forces the car to not consider that lane. For other cases where cars are out of the `SAFE_LANE_CHANGE_DIST` range and lane change is feasible, it will provide lower cost for a lane which has the car immediately ahead or behind at the maximum distance in that lane.
+
+A possible improvement to this can be to maintain different safe distances for vehicles ahead vs vehicles behind rather than using the same value for both. Additionally, we can assume the time interval it takes to do a lane change and combine it with the speed of the two cars in question, to predict where the car in the next lane would be at the end of the lane change. This value would be more appropriate rather than using a static value for safe lane change distance.
+
+##### Speed based cost
+```cpp
+double speedCost(Car ego_car);
+```
+This cost functions finds the car directly ahead in a lane and penalizes the lane with a car which has a lower speed. In case of multiple lanes available for switching, this cost function will prefer the lane with higher speed of the car immediately ahead. It also prevents the car from changing lanes at low speeds as it may cause a collision from the car immediately behind.
+
+
+Other than the ones already described, a good improvement would be to add the ability to follow car ahead with the speed with which the car ahead is moving. With the current logic, if a lane change is not viable, the ego car does follow the car ahead, but keeps accelerating and decelerating until the next lane becomes available for switching. While it doesn't exceed the allowed jerk, it would definitely be an improvement in the trajectory.
+
+---
+## Udacity instructions
+
 ### Simulator.
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases).
 
@@ -38,13 +92,13 @@ Here is the data provided from the Simulator to the C++ Program
 #### Previous path data given to the Planner
 
 //Note: Return the previous list but with processed points removed, can be a nice tool to show how far along
-the path has processed since last time. 
+the path has processed since last time.
 
 ["previous_path_x"] The previous list of x points previously given to the simulator
 
 ["previous_path_y"] The previous list of y points previously given to the simulator
 
-#### Previous path's end s and d values 
+#### Previous path's end s and d values
 
 ["end_path_s"] The previous list's last point's frenet s value
 
@@ -52,7 +106,7 @@ the path has processed since last time.
 
 #### Sensor Fusion Data, a list of all other car's attributes on the same side of the road. (No Noise)
 
-["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates. 
+["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates.
 
 ## Details
 
@@ -82,7 +136,7 @@ A really helpful resource for doing this project and creating smooth trajectorie
   * Run either `install-mac.sh` or `install-ubuntu.sh`.
   * If you install from source, checkout to commit `e94b6e1`, i.e.
     ```
-    git clone https://github.com/uWebSockets/uWebSockets 
+    git clone https://github.com/uWebSockets/uWebSockets
     cd uWebSockets
     git checkout e94b6e1
     ```
@@ -137,4 +191,3 @@ still be compilable with cmake and make./
 
 ## How to write a README
 A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
-
